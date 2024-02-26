@@ -1,57 +1,92 @@
 #!/usr/bin/python3
-"""
-    Flask route that returns json respone
-"""
+""" Amenities routes handler """
 from api.v1.views import app_views
-from flask import abort, jsonify, request
-from models import storage, CNC
-from flasgger.utils import swag_from
+from flask import jsonify, abort, request
+from models import storage
+from models.amenity import Amenity
 
 
-@app_views.route('/amenities/', methods=['GET', 'POST'])
-@swag_from('swagger_yaml/amenities_no_id.yml', methods=['GET', 'POST'])
-def amenities_no_id(amenity_id=None):
+def check_id(cls, amenity_id):
     """
-        amenities route that handles http requests no ID given
+        check amenity
     """
-    if request.method == 'GET':
-        all_amenities = storage.all('Amenity')
-        all_amenities = [obj.to_json() for obj in all_amenities.values()]
-        return jsonify(all_amenities)
-
-    if request.method == 'POST':
-        req_json = request.get_json()
-        if req_json is None:
-            abort(400, 'Not a JSON')
-        if req_json.get('name') is None:
-            abort(400, 'Missing name')
-        Amenity = CNC.get('Amenity')
-        new_object = Amenity(**req_json)
-        new_object.save()
-        return jsonify(new_object.to_json()), 201
+    try:
+        get_amenity = storage.get(cls, amenity_id)
+        get_amenity.to_dict()
+    except Exception:
+        abort(404)
+    return get_amenity
 
 
+def get_amenities(amenity_id):
+    """
+       Retrieves the list of all Amenity objects
+    """
+    if (amenity_id is not None):
+        get_amenity = check_id(Amenity, amenity_id).to_dict()
+        return jsonify(get_amenity)
+    all_amenities = storage.all(Amenity)
+    amenities = []
+    for v in all_amenities.values():
+        amenities.append(v.to_dict())
+    return jsonify(amenities)
+
+
+def delete_amenity(amenity_id):
+    """
+        Deletes a Amenity object
+    """
+    get_amenity = check_id(Amenity, amenity_id)
+    storage.delete(get_amenity)
+    storage.save()
+    response = {}
+    return jsonify(response)
+
+
+def create_amenity(request):
+    """
+        Creates a amenity object
+    """
+    body_request = request.get_json()
+    if (body_request is None):
+        abort(400, 'Not a JSON')
+    try:
+        amenity_name = body_request['name']
+    except KeyError:
+        abort(400, 'Missing name')
+    new_amenity = Amenity(name=amenity_name)
+    storage.new(new_amenity)
+    storage.save()
+    return jsonify(new_amenity.to_dict())
+
+
+def update_amenity(amenity_id, request):
+    """
+        Updates a Amenity object
+    """
+    get_amenity = check_id(Amenity, amenity_id)
+    body_request = request.get_json()
+    if (body_request is None):
+        abort(400, 'Not a JSON')
+    for k, v in body_request.items():
+        if (k not in ('id', 'created_at', 'updated_at')):
+            setattr(get_amenity, k, v)
+    storage.save()
+    return jsonify(get_amenity.to_dict())
+
+
+@app_views.route('/amenities/', methods=['GET', 'POST'],
+                 defaults={'amenity_id': None}, strict_slashes=False)
 @app_views.route('/amenities/<amenity_id>', methods=['GET', 'DELETE', 'PUT'])
-@swag_from('swagger_yaml/amenities_id.yml', methods=['GET', 'DELETE', 'PUT'])
-def amenities_with_id(amenity_id=None):
+def amenities(amenity_id):
     """
-        amenities route that handles http requests with ID given
+        Handle amenities requests
     """
-    amenity_obj = storage.get('Amenity', amenity_id)
-    if amenity_obj is None:
-        abort(404, 'Not found')
-
-    if request.method == 'GET':
-        return jsonify(amenity_obj.to_json())
-
-    if request.method == 'DELETE':
-        amenity_obj.delete()
-        del amenity_obj
-        return jsonify({}), 200
-
-    if request.method == 'PUT':
-        req_json = request.get_json()
-        if req_json is None:
-            abort(400, 'Not a JSON')
-        amenity_obj.bm_update(req_json)
-        return jsonify(amenity_obj.to_json()), 200
+    if (request.method == "GET"):
+        return get_amenities(amenity_id)
+    elif (request.method == "DELETE"):
+        return delete_amenity(amenity_id)
+    elif (request.method == "POST"):
+        return create_amenity(request), 201
+    elif (request.method == "PUT"):
+        return update_amenity(amenity_id, request), 200
